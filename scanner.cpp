@@ -33,7 +33,7 @@ std::set<std::string> g_found_pages;
 std::set<std::string> g_found_subdomains;
 
 // =================================================================
-// Thread Pool Implementation (No changes needed)
+// Thread Pool Implementation (No changes)
 // =================================================================
 class ThreadPool {
 public:
@@ -70,7 +70,6 @@ ThreadPool::ThreadPool(size_t numThreads) : stop(false), active_tasks(0) {
         });
     }
 }
-
 void ThreadPool::enqueue(std::function<void()> task) {
     {
         std::unique_lock<std::mutex> lock(queue_mutex);
@@ -80,12 +79,10 @@ void ThreadPool::enqueue(std::function<void()> task) {
     active_tasks++;
     condition.notify_one();
 }
-
 void ThreadPool::waitFinished() {
     std::unique_lock<std::mutex> lock(queue_mutex);
     wait_condition.wait(lock, [this] { return tasks.empty() && active_tasks == 0; });
 }
-
 ThreadPool::~ThreadPool() {
     {
         std::unique_lock<std::mutex> lock(queue_mutex);
@@ -97,7 +94,7 @@ ThreadPool::~ThreadPool() {
 }
 
 // =================================================================
-// Utility Functions
+// Utility Functions (No changes)
 // =================================================================
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* userp) {
     userp->append((char*)contents, size * nmemb);
@@ -113,7 +110,7 @@ std::string httpGet(const std::string& url) {
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "ReconTool/1.0");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "ReconTool/1.1");
         curl_easy_perform(curl);
         curl_easy_cleanup(curl);
     }
@@ -126,27 +123,24 @@ std::string getDomain(const std::string& url) {
     if (std::regex_search(url, match, domain_regex) && match.size() > 1) {
         return match[1].str();
     }
-    return url; // Assume input is domain if regex fails
+    return url;
 }
 
 // =================================================================
-// Core Logic: Subdomain and Page Discovery
+// Core Logic (No changes)
 // =================================================================
-
 void checkSubdomain(const std::string& subdomain) {
     CURL* curl = curl_easy_init();
     if (curl) {
         std::string url = "http://" + subdomain;
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L); // We only need to check for connection
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
-        
         CURLcode res = curl_easy_perform(curl);
         if (res == CURLE_OK) {
             long response_code;
             curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-            // Any successful connection or valid HTTP response means it exists
             if (response_code > 0) {
                 std::lock_guard<std::mutex> guard(subdomainsMutex);
                 g_found_subdomains.insert(subdomain);
@@ -167,36 +161,68 @@ std::set<std::string> findLinks(const std::string& baseUrl, const std::string& p
 
     for (std::sregex_iterator i = words_begin; i != words_end; ++i) {
         std::string link = (*i)[1].str();
-        if (link.empty() || link[0] == '#' || link.rfind("javascript:", 0) == 0 || link.rfind("mailto:", 0) == 0) {
-            continue;
-        }
+        if (link.empty() || link[0] == '#' || link.rfind("javascript:", 0) == 0 || link.rfind("mailto:", 0) == 0) continue;
         
         std::string full_url = "";
-        if (link.rfind("//", 0) == 0) {
-            full_url = "http:" + link;
-        } else if (link.rfind("/", 0) == 0) {
+        if (link.rfind("//", 0) == 0) full_url = "http:" + link;
+        else if (link.rfind("/", 0) == 0) {
             std::smatch match;
             std::regex base_url_regex(R"(^(https?:\/\/[^\/]+))");
-            if(std::regex_search(baseUrl, match, base_url_regex)){
-                full_url = match[1].str() + link;
-            }
-        } else if (link.rfind("http", 0) != 0) {
-            continue;
-        } else {
-            full_url = link;
-        }
+            if(std::regex_search(baseUrl, match, base_url_regex)) full_url = match[1].str() + link;
+        } 
+        else if (link.rfind("http", 0) != 0) continue;
+        else full_url = link;
         
-        if (!full_url.empty() && getDomain(full_url) == baseDomain) {
-            links.insert(full_url);
-        }
+        if (!full_url.empty() && getDomain(full_url) == baseDomain) links.insert(full_url);
     }
     return links;
 }
 
 // =================================================================
-// HTML Report Generation
+// NEW: Different Report Generation Functions
 // =================================================================
+void printTerminalReport() {
+    std::cout << "\n\n" << CYAN << "--- SCAN RESULTS ---" << RESET << std::endl;
+    std::cout << YELLOW << "\n[*] Found Subdomains (" << g_found_subdomains.size() << "):" << RESET << std::endl;
+    for(const auto& sub : g_found_subdomains) {
+        std::cout << GREEN << "  -> " << sub << RESET << std::endl;
+    }
+
+    std::cout << YELLOW << "\n[*] Discovered Pages (" << g_found_pages.size() << "):" << RESET << std::endl;
+    for(const auto& page : g_found_pages) {
+        std::cout << GREEN << "  -> " << page << RESET << std::endl;
+    }
+    std::cout << "\n" << CYAN << "--- END OF REPORT ---" << RESET << std::endl;
+}
+
+void generateTxtReport(const std::string& filename, const std::string& targetUrl) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        std::cerr << RED << "Failed to open report file: " << filename << RESET << std::endl;
+        return;
+    }
+
+    auto t = std::time(nullptr);
+    auto tm = *std::localtime(&t);
+
+    file << "Reconnaissance Report\n";
+    file << "======================\n\n";
+    file << "Target Domain: " << getDomain(targetUrl) << "\n";
+    file << "Scan Date: " << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "\n\n";
+
+    file << "Found Subdomains (" << g_found_subdomains.size() << "):\n";
+    file << "------------------------\n";
+    for(const auto& sub : g_found_subdomains) file << sub << "\n";
+
+    file << "\nDiscovered Pages (" << g_found_pages.size() << "):\n";
+    file << "------------------------\n";
+    for(const auto& page : g_found_pages) file << page << "\n";
+
+    std::cout << GREEN << "✅ TXT report generated: " << filename << RESET << std::endl;
+}
+
 void generateHtmlReport(const std::string& filename, const std::string& targetUrl) {
+    // This function remains exactly the same as before
     std::ofstream file(filename);
     if (!file.is_open()) {
         std::cerr << RED << "Failed to open report file: " << filename << RESET << std::endl;
@@ -243,7 +269,7 @@ void generateHtmlReport(const std::string& filename, const std::string& targetUr
     for(const auto& page : g_found_pages) file << "<li>" << page << "</li>";
     file << R"html(</ul></div></div>
         
-        <div class="footer"><p>Generated by ReconTool/1.0</p></div>
+        <div class="footer"><p>Generated by ReconTool/1.1</p></div>
     </div>
     <script>
         document.getElementById('download-btn').addEventListener('click', () => {
@@ -258,15 +284,32 @@ void generateHtmlReport(const std::string& filename, const std::string& targetUr
 }
 
 // =================================================================
-// Main Logic
+// UPDATED: Main Logic with Argument Parsing
 // =================================================================
 int main(int argc, char* argv[]) {
     if (argc < 2) {
-        std::cerr << RED << "Usage: ./recon-tool <start_url_or_domain>" << RESET << std::endl;
+        std::cerr << RED << "Usage: ./recon-tool <url_or_domain> [-o <output_file>]" << RESET << std::endl;
         return 1;
     }
 
     std::string target = argv[1];
+    std::string outputFile = "";
+
+    // Argument parsing for output file
+    if (argc == 4) {
+        std::string flag = argv[2];
+        if (flag == "-o" || flag == "--output") {
+            outputFile = argv[3];
+        } else {
+            std::cerr << RED << "Invalid flag: " << flag << ". Use -o or --output." << RESET << std::endl;
+            return 1;
+        }
+    } else if (argc != 2) {
+        std::cerr << RED << "Invalid number of arguments." << RESET << std::endl;
+        std::cerr << RED << "Usage: ./recon-tool <url_or_domain> [-o <output_file>]" << RESET << std::endl;
+        return 1;
+    }
+
     std::string domain = getDomain(target);
     std::string startUrl = (target.find("http") == 0) ? target : "http://" + target;
 
@@ -287,46 +330,43 @@ int main(int argc, char* argv[]) {
 
     // --- Start Page Crawl ---
     std::cout << CYAN << "[*] Starting page crawl from: " << startUrl << RESET << std::endl;
-    std::queue<std::string> urlsToCrawl;
-    std::set<std::string> crawledUrls;
-    
-    urlsToCrawl.push(startUrl);
-    crawledUrls.insert(startUrl);
-    g_found_pages.insert(startUrl);
-
-    int max_urls_to_crawl = 100;
-    std::atomic<int> active_crawl_tasks = 0;
-
-    // We can't use the simple while loop with the thread pool easily.
-    // Instead, we create a function that can be re-enqueued.
     std::function<void(std::string)> crawlPage;
     crawlPage = [&](std::string currentUrl) {
         std::string pageContent = httpGet(currentUrl);
         std::set<std::string> newLinks = findLinks(startUrl, pageContent);
-
         for (const auto& link : newLinks) {
             bool inserted = false;
             {
                 std::lock_guard<std::mutex> guard(pagesMutex);
-                if (crawledUrls.find(link) == crawledUrls.end() && crawledUrls.size() < max_urls_to_crawl) {
-                    crawledUrls.insert(link);
+                if (g_found_pages.find(link) == g_found_pages.end() && g_found_pages.size() < 100) {
                     g_found_pages.insert(link);
                     inserted = true;
                 }
             }
-            if(inserted){
-                 pool.enqueue([link, &crawlPage]{ crawlPage(link); });
-            }
+            if(inserted) pool.enqueue([link, &crawlPage]{ crawlPage(link); });
         }
     };
-    
+    g_found_pages.insert(startUrl);
     pool.enqueue([startUrl, &crawlPage]{ crawlPage(startUrl); });
     
     pool.waitFinished();
 
     std::cout << GREEN << "\n✅ Reconnaissance complete!" << RESET << std::endl;
     
-    generateHtmlReport("recon_report.html", target);
+    // --- Conditional Report Generation ---
+    if (outputFile.empty()) {
+        printTerminalReport();
+    } else {
+        // Check file extension
+        if (outputFile.length() > 5 && outputFile.substr(outputFile.length() - 5) == ".html") {
+            generateHtmlReport(outputFile, target);
+        } else { // Default to .txt for any other extension
+            if(outputFile.length() > 4 && outputFile.substr(outputFile.length() - 4) != ".txt"){
+                 std::cout << YELLOW << "[!] Unknown extension, generating a .txt report." << RESET << std::endl;
+            }
+            generateTxtReport(outputFile, target);
+        }
+    }
 
     return 0;
 }
